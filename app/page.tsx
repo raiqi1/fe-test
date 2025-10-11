@@ -50,6 +50,8 @@ interface SystemStatus {
   message: string;
 }
 
+// No typing animation needed - just direct display
+
 export default function Home() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputMessage, setInputMessage] = useState("");
@@ -57,6 +59,7 @@ export default function Home() {
   const [systemStatus, setSystemStatus] = useState<SystemStatus | null>(null);
   const [isUploading, setIsUploading] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  const [isRebuilding, setIsRebuilding] = useState(false);
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -66,7 +69,6 @@ export default function Home() {
   // Fetch system status
   useEffect(() => {
     fetchStatus();
-    // Refresh status every 30 seconds
     const interval = setInterval(fetchStatus, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -102,7 +104,6 @@ export default function Home() {
     try {
       const formData = new FormData();
       formData.append("question", inputMessage);
-      // Use optimized default settings
       formData.append("use_hybrid", "true");
       formData.append("use_query_rewriting", "true");
       formData.append("use_reranking", "true");
@@ -117,8 +118,19 @@ export default function Home() {
 
       const data = await response.json();
 
-      // Clean up markdown formatting (remove ** bold markers)
-      const cleanedAnswer = data.answer.replace(/\*\*/g, '');
+      // Clean up markdown and fix encoding issues
+      let cleanedAnswer = data.answer.replace(/\*\*/g, '');
+
+      // Fix encoding issues
+      cleanedAnswer = cleanedAnswer
+        .replace(/â\s*â\s*/g, '→')  // â  â   becomes →
+        .replace(/â/g, '→')
+        .replace(/â/g, '"')
+        .replace(/â/g, '"')
+        .replace(/â/g, "'")
+        .replace(/â/g, '—')
+        .replace(/â/g, '–')
+        .replace(/Â/g, '');
 
       const assistantMessage: Message = {
         type: "assistant",
@@ -161,7 +173,6 @@ export default function Home() {
 
       const data = await response.json();
 
-      // Show success message in chat
       const successMessage: Message = {
         type: "assistant",
         content: `✅ Document "${file.name}" uploaded successfully! The knowledge base has been updated.`,
@@ -223,6 +234,43 @@ export default function Home() {
     }
   };
 
+  const handleRebuildKnowledgeBase = async () => {
+    setIsRebuilding(true);
+
+    const rebuildMessage: Message = {
+      type: "assistant",
+      content: "🔨 Rebuilding knowledge base... This may take a few minutes.",
+      timestamp: Date.now(),
+    };
+    setMessages((prev) => [...prev, rebuildMessage]);
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/rebuild-knowledge-base`, {
+        method: "POST",
+      });
+      const data = await response.json();
+
+      const successMessage: Message = {
+        type: "assistant",
+        content: "✅ Knowledge base rebuilt successfully! All data is now fresh and up-to-date.",
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, successMessage]);
+
+      fetchStatus();
+    } catch (error) {
+      console.error("Error rebuilding knowledge base:", error);
+      const errorMessage: Message = {
+        type: "assistant",
+        content: "❌ Failed to rebuild knowledge base. Please try again.",
+        timestamp: Date.now(),
+      };
+      setMessages((prev) => [...prev, errorMessage]);
+    } finally {
+      setIsRebuilding(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800">
       {/* Header */}
@@ -248,8 +296,8 @@ export default function Home() {
               <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 dark:bg-slate-700 rounded-full">
                 <div
                   className={`w-2 h-2 rounded-full ${systemStatus.ready
-                      ? "bg-green-500 animate-pulse"
-                      : "bg-yellow-500"
+                    ? "bg-green-500 animate-pulse"
+                    : "bg-yellow-500"
                     }`}
                 />
                 <span className="text-sm text-slate-700 dark:text-slate-300">
@@ -349,8 +397,8 @@ export default function Home() {
                   >
                     <div
                       className={`max-w-[85%] rounded-2xl px-4 py-3 ${message.type === "user"
-                          ? "bg-emerald-600 text-white"
-                          : "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white"
+                        ? "bg-emerald-600 text-white"
+                        : "bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white"
                         }`}
                     >
                       <p className="whitespace-pre-wrap">{message.content}</p>
@@ -382,7 +430,7 @@ export default function Home() {
                           {message.response_time_ms && (
                             <div className="flex items-center gap-1.5 text-xs text-slate-600 dark:text-slate-400 mt-2">
                               <Clock className="w-3 h-3" />
-                              <span>{message.response_time_ms}ms</span>
+                              <span>{(message.response_time_ms / 1000).toFixed(2)}s</span>
                             </div>
                           )}
                         </div>
@@ -394,11 +442,12 @@ export default function Home() {
                 {isLoading && (
                   <div className="flex justify-start">
                     <div className="bg-slate-100 dark:bg-slate-700 rounded-2xl px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin text-emerald-600" />
-                        <span className="text-sm text-slate-600 dark:text-slate-400">
-                          Thinking...
-                        </span>
+                      <div className="flex items-center gap-1">
+                        <div className="flex gap-1">
+                          <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                          <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                          <div className="w-2 h-2 bg-slate-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                        </div>
                       </div>
                     </div>
                   </div>
@@ -453,8 +502,8 @@ export default function Home() {
                       Status
                     </span>
                     <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${systemStatus.ready
-                        ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
-                        : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
+                      ? "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200"
+                      : "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200"
                       }`}>
                       {systemStatus.ready ? "Ready" : "Loading"}
                     </span>
@@ -472,31 +521,31 @@ export default function Home() {
                   <div className="pt-3 border-t border-slate-200 dark:border-slate-700">
                     <div className="grid grid-cols-2 gap-2 text-xs">
                       <div className={`p-2 rounded-lg text-center ${systemStatus.knowledge_base.document_loaded
-                          ? "bg-green-50 dark:bg-green-900/20"
-                          : "bg-slate-50 dark:bg-slate-700"
+                        ? "bg-green-50 dark:bg-green-900/20"
+                        : "bg-slate-50 dark:bg-slate-700"
                         }`}>
                         <FileText className={`w-4 h-4 mx-auto mb-1 ${systemStatus.knowledge_base.document_loaded
-                            ? "text-green-600 dark:text-green-400"
-                            : "text-slate-400"
+                          ? "text-green-600 dark:text-green-400"
+                          : "text-slate-400"
                           }`} />
                         <div className={`font-medium ${systemStatus.knowledge_base.document_loaded
-                            ? "text-green-700 dark:text-green-300"
-                            : "text-slate-600 dark:text-slate-400"
+                          ? "text-green-700 dark:text-green-300"
+                          : "text-slate-600 dark:text-slate-400"
                           }`}>
                           Documents
                         </div>
                       </div>
                       <div className={`p-2 rounded-lg text-center ${systemStatus.knowledge_base.website_scraped
-                          ? "bg-blue-50 dark:bg-blue-900/20"
-                          : "bg-slate-50 dark:bg-slate-700"
+                        ? "bg-blue-50 dark:bg-blue-900/20"
+                        : "bg-slate-50 dark:bg-slate-700"
                         }`}>
                         <Globe className={`w-4 h-4 mx-auto mb-1 ${systemStatus.knowledge_base.website_scraped
-                            ? "text-blue-600 dark:text-blue-400"
-                            : "text-slate-400"
+                          ? "text-blue-600 dark:text-blue-400"
+                          : "text-slate-400"
                           }`} />
                         <div className={`font-medium ${systemStatus.knowledge_base.website_scraped
-                            ? "text-blue-700 dark:text-blue-300"
-                            : "text-slate-600 dark:text-slate-400"
+                          ? "text-blue-700 dark:text-blue-300"
+                          : "text-slate-600 dark:text-slate-400"
                           }`}>
                           Website
                         </div>
@@ -546,6 +595,24 @@ export default function Home() {
                       <>
                         <RefreshCw className="w-4 h-4" />
                         <span className="text-sm font-medium">Refresh Website</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    onClick={handleRebuildKnowledgeBase}
+                    disabled={isRebuilding}
+                    className="w-full flex items-center justify-center gap-2 px-4 py-2.5 bg-purple-50 dark:bg-purple-900/20 hover:bg-purple-100 dark:hover:bg-purple-900/30 text-purple-700 dark:text-purple-300 rounded-lg transition disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {isRebuilding ? (
+                      <>
+                        <Loader2 className="w-4 h-4 animate-spin" />
+                        <span className="text-sm font-medium">Rebuilding...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Database className="w-4 h-4" />
+                        <span className="text-sm font-medium">Rebuild Knowledge Base</span>
                       </>
                     )}
                   </button>
